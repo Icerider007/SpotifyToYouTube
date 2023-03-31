@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Spotify to YouTube Playlist Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #F9F9F9;
+        }
+        h1 {
+            margin-top: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 36px;
+            color: #212121;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+            text-align: center;
+            background-color: #FFFFFF;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px 0px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+        .input-box {
+            width: 100%;
+            height: 40px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            outline: none;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        .convert-button {
+            background-color: #1DB954;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .convert-button:hover {
+            background-color: #1ED760;
+        }
+        .result {
+            margin-top: 30px;
+            text-align: left;
+            font-size: 18px;
+            color: #212121;
+        }
+        .result h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 24px;
+            color: #212121;
+        }
+        .result a {
+            color: #1DB954;
+            text-decoration: none;
+            transition: color 0.2s ease-in-out;
+        }
+        .result a:hover {
+            color: #1ED760;
+        }
+        .result ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .result li {
+            margin-bottom: 5px;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Spotify to YouTube Playlist Converter</h1>
+    <div class="container">
+        <input type="text" class="input-box" placeholder="Enter Spotify Playlist URL">
+        <button class="convert-button">Convert</button>
+        <div class="result"></div>
+        <div class="error"></div>
+    </div>
+
+    <script>
+        var convertButton = document.querySelector(".convert-button");
+        var inputBox = document.querySelector(".input-box");
+        var resultDiv = document.querySelector(".result");
+        var errorDiv = document.querySelector(".error");
+
+        convertButton.addEventListener("click", function() {
+            var playlistUrl = inputBox.value.trim();
+
+            // check if input is empty
+            if (playlistUrl === "") {
+                errorDiv.innerHTML = "Please enter a Spotify playlist URL";
+                resultDiv.innerHTML = "";
+                return;
+            }
+
+            // check if input is a valid Spotify playlist URL
+            var spotifyRegex = /https?:\/\/open.spotify.com/playlist/[a-zA-Z0-9]+/; 
+            // regex for matching spotify playlist urls
+            if (!spotifyRegex.test(playlistUrl)) {
+             errorDiv.innerHTML = "Invalid Spotify playlist URL. Please enter a valid URL";
+             resultDiv.innerHTML = "";
+             return;
+            }
+                    // extract playlist ID from the URL
+        var playlistId = playlistUrl.match(/playlist\/([a-zA-Z0-9]+)/)[1];
+
+// make a GET request to Spotify API to get playlist details
+var xhr = new XMLHttpRequest();
+xhr.open("GET", "https://api.spotify.com/v1/playlists/" + playlistId);
+xhr.setRequestHeader("Authorization", "Bearer " + YOUR_SPOTIFY_ACCESS_TOKEN);
+
+xhr.onload = function() {
+    if (xhr.status === 200) {
+        var response = JSON.parse(xhr.responseText);
+        var playlistName = response.name;
+        var playlistTracks = response.tracks.items;
+
+        // create a new YouTube playlist
+        var createPlaylistRequest = gapi.client.youtube.playlists.insert({
+            "part": [
+                "snippet,status"
+            ],
+            "resource": {
+                "snippet": {
+                    "title": playlistName,
+                    "description": "Converted from Spotify playlist: " + playlistUrl
+                },
+                "status": {
+                    "privacyStatus": "public"
+                }
+            }
+        });
+
+        createPlaylistRequest.execute(function(response) {
+            var playlistId = response.id;
+
+            // add each track from the Spotify playlist to the YouTube playlist
+            for (var i = 0; i < playlistTracks.length; i++) {
+                var trackName = playlistTracks[i].track.name;
+                var artistName = playlistTracks[i].track.artists[0].name;
+                var searchQuery = trackName + " " + artistName + " lyrics";
+                var videoId = "";
+
+                // search for the track on YouTube using the search API
+                var searchRequest = gapi.client.youtube.search.list({
+                    "part": [
+                        "id"
+                    ],
+                    "q": searchQuery,
+                    "type": [
+                        "video"
+                    ]
+                });
+
+                searchRequest.execute(function(response) {
+                    videoId = response.items[0].id.videoId;
+
+                    // add the video to the YouTube playlist
+                    var addVideoRequest = gapi.client.youtube.playlistItems.insert({
+                        "part": [
+                            "snippet"
+                        ],
+                        "resource": {
+                            "snippet": {
+                                "playlistId": playlistId,
+                                "position": i,
+                                "resourceId": {
+                                    "kind": "youtube#video",
+                                    "videoId": videoId
+                                }
+                            }
+                        }
+                    });
+
+                    addVideoRequest.execute();
+                });
+            }
+
+            // display the link to the new YouTube playlist
+            var playlistLink = "https://www.youtube.com/playlist?list=" + playlistId;
+            resultDiv.innerHTML = "<h3>Playlist Created!</h3><p>You can access your new playlist here: <a href='" + playlistLink + "' target='_blank'>" + playlistLink + "</a></p>";
+            errorDiv.innerHTML = "";
+        });
+    } else {
+        errorDiv.innerHTML = "Error " + xhr.status + ": " + xhr.statusText;
+        resultDiv.innerHTML = "";
+    }
+};
+
+xhr.onerror = function() {
+    errorDiv.innerHTML = "Request failed. Please check your internet connection.";
+    resultDiv.innerHTML = "";
+};
+
+xhr.send();
+});
+</script>
+</body>
+</html>
